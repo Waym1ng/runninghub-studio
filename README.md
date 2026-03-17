@@ -168,7 +168,7 @@ from runninghub_sdk import (
 
 ## 示例
 
-更多示例请参考 [examples.py](runninghub_sdk/examples.py)。
+更多示例请参考 [EXAMPLES.md](runninghub_sdk/EXAMPLES.md)。
 
 ## License
 
