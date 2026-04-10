@@ -298,25 +298,37 @@ class RunningHubClient:
 
     # ==================== 同步上传方法 ====================
 
-    def upload_file(self, file: Union[BinaryIO, bytes, str]) -> UploadResponseData:
+    def upload_file(
+        self,
+        file: Union[BinaryIO, bytes, str],
+        filename: Optional[str] = None
+    ) -> UploadResponseData:
         """
         上传文件
 
         Args:
             file: 文件对象、字节数据或文件路径
+            filename: 文件名（可选，用于指定上传文件名）
 
         Returns:
             UploadResponseData
         """
         if isinstance(file, str):
+            # 文件路径
+            import os
+            actual_filename = filename or os.path.basename(file)
             with open(file, "rb") as f:
                 file_content = f.read()
         elif isinstance(file, bytes):
             file_content = file
+            actual_filename = filename or "upload.bin"
         else:
+            # BinaryIO
             file_content = file.read()
+            actual_filename = filename or getattr(file, 'name', 'upload.bin')
 
-        files = {"file": ("file", file_content)}
+        # 使用正确的文件名格式
+        files = {"file": (actual_filename, file_content)}
         response = self._upload("/openapi/v2/media/upload/binary", files)
         return UploadResponseData.from_dict(response)
 
@@ -647,16 +659,22 @@ class RunningHubClient:
     def _upload(self, endpoint: str, files: Dict[str, tuple]) -> Any:
         """同步上传文件"""
         try:
-            # 上传不需要Content-Type，让httpx自动处理
-            headers = {"Authorization": f"Bearer {self.api_key}"}
-            response = self.sync_client.post(
-                endpoint,
-                files=files,
-                headers=headers,
-            )
-            response.raise_for_status()
-            result = response.json()
-            return self._handle_response(result)
+            # 上传使用独立的 httpx 客户端，不带默认 headers
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+            }
+            # 使用独立客户端发送请求，避免默认 Content-Type
+            with httpx.Client(base_url=self.base_url, timeout=self.timeout) as client:
+                response = client.post(
+                    endpoint,
+                    files=files,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                result = response.json()
+                # 打印完整响应以便调试
+                print(f"上传API原始响应: {result}")
+                return self._handle_upload_response(result)
         except httpx.HTTPStatusError as e:
             raise UploadError(
                 code=ErrorCode.UNKNOWN,
@@ -664,6 +682,25 @@ class RunningHubClient:
             )
         except httpx.RequestError as e:
             raise NetworkError(f"上传请求失败: {str(e)}", e)
+
+    def _handle_upload_response(self, result: Dict[str, Any]) -> Any:
+        """处理上传API响应（可能有不同的格式）"""
+        # 检查是否有 code 字段
+        code = result.get("code", 0)
+        if code != 0:
+            # 上传接口可能使用 message 或 msg
+            error_msg = result.get("message") or result.get("msg") or "未知错误"
+            raise RunningHubError.from_api_response(code, error_msg)
+        
+        # 尝试获取 data 字段
+        data = result.get("data")
+        if data is None:
+            # 如果没有 data 字段，直接返回整个响应（排除 code、msg 和 message）
+            data = {k: v for k, v in result.items() if k not in ("code", "msg", "message")}
+            if not data:
+                # 如果还是空，返回原始响应
+                return result
+        return data
 
     async def _async_upload(self, endpoint: str, files: Dict[str, tuple]) -> Any:
         """异步上传文件"""

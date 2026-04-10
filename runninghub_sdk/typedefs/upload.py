@@ -13,8 +13,10 @@ class UploadResponseData:
     size: str
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "UploadResponseData":
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "UploadResponseData":
         """从API响应创建"""
+        if data is None:
+            data = {}
         return cls(
             type=data.get("type", ""),
             download_url=data.get("download_url", ""),
@@ -30,8 +32,10 @@ class LoraUploadResponse:
     url: str
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "LoraUploadResponse":
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "LoraUploadResponse":
         """从API响应创建"""
+        if data is None:
+            data = {}
         return cls(
             file_name=data.get("fileName", ""),
             url=data.get("url", ""),
